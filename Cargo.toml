@@ -1,0 +1,18 @@
+[package]
+name = "vfp_messagebox"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+winapi = { version = "0.3", features = ["winuser", "wingdi", "windef", "minwindef", "basetsd"] }
+
+[lib]
+name = "vfp_messagebox"
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+# Disable debug info to prevent MSVC from writing a PDB in release builds
+# This avoids LINK : fatal error LNK1201 when the PDB cannot be written
+# (e.g., due to permissions/locks or environment issues).
+debug = 0
+split-debuginfo = "off"
