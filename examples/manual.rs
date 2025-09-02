@@ -10,7 +10,7 @@ fn main() {
 
     unsafe {
         let msg = CString::new(
-            "Hello from Rust! This is the simple message box.\nClick OK or close the window.",
+            "HelloX from Rust! This is the simple message box made in RUST callable from VFP9 SP2\n\nClick OK or close the window.",
         )
         .unwrap();
         let title = CString::new("VFP MessageBox - Simple").unwrap();

@@ -17,7 +17,7 @@ use winapi::um::winuser::{
     CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_ARROW, IDI_APPLICATION, MB_OK, MSG, 
     SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, 
     WM_PAINT, WNDCLASSEXW, WS_OVERLAPPED, WS_CAPTION, WS_SYSMENU, WS_VISIBLE, WS_CHILD,
-    SPI_GETNONCLIENTMETRICS, NONCLIENTMETRICSW, DT_CENTER, DT_VCENTER, DT_SINGLELINE,
+    SPI_GETNONCLIENTMETRICS, NONCLIENTMETRICSW, DT_CENTER, DT_VCENTER, DT_SINGLELINE, DT_WORDBREAK, DT_CALCRECT,
     SWP_NOMOVE, SWP_NOZORDER
 };
 
@@ -108,23 +108,84 @@ unsafe extern "system" fn window_proc(
 ) -> LRESULT {
     match msg {
         WM_CREATE => {
+            // Compute layout with word-wrapped text; resize window vertically if needed
             let scale = get_dpi_scale();
             let button_width = (100.0 * scale * 1.2) as i32;
             let button_height = (35.0 * scale * 1.2) as i32;
             let margin = (20.0 * scale) as i32;
-            
-            let font = create_scaled_font(12);
-            
-            // Get window dimensions
-            let mut rect: RECT = std::mem::zeroed();
-            GetWindowRect(hwnd, &mut rect);
-            let window_width = rect.right - rect.left;
-            
-            // Calculate button positions
+
+            // Measure required text height using the same font size as used in WM_PAINT
+            let text_font = create_scaled_font(14);
+            let hdc = GetDC(hwnd);
+            let old_font = SelectObject(hdc, text_font as *mut _);
+
+            // Get current client size
+            let mut client_rect: RECT = std::mem::zeroed();
+            winapi::um::winuser::GetClientRect(hwnd, &mut client_rect);
+            let client_width = client_rect.right - client_rect.left;
+
+            // Compute text rect width with horizontal margins
+            let mut measure_rect: RECT = std::mem::zeroed();
+            measure_rect.left = 0;
+            measure_rect.top = 0;
+            measure_rect.right = client_width - 2 * margin;
+            measure_rect.bottom = 0;
+
+            // Calculate required height for the message with word wrapping
+            DrawTextW(
+                hdc,
+                MESSAGE_TEXT.as_ptr(),
+                MESSAGE_TEXT.len() as i32 - 1,
+                &mut measure_rect,
+                DT_CENTER | DT_WORDBREAK | DT_CALCRECT,
+            );
+            let required_text_height = measure_rect.bottom - measure_rect.top;
+
+            // Restore and clean up measuring objects
+            SelectObject(hdc, old_font);
+            DeleteObject(text_font as *mut _);
+            ReleaseDC(hwnd, hdc);
+
+            // Determine desired layout
+            let top_padding = 30;
+            let desired_button_y = top_padding + required_text_height + margin;
+            let desired_client_height = desired_button_y + button_height + margin;
+
+            // If current client height is not enough, grow the window vertically
+            let current_client_height = client_rect.bottom - client_rect.top;
+            if desired_client_height > current_client_height {
+                let extra = desired_client_height - current_client_height;
+
+                // Increase overall window height by the extra client height needed
+                let mut win_rect: RECT = std::mem::zeroed();
+                GetWindowRect(hwnd, &mut win_rect);
+                let window_width = win_rect.right - win_rect.left;
+                let window_height = win_rect.bottom - win_rect.top;
+
+                SetWindowPos(
+                    hwnd,
+                    ptr::null_mut(),
+                    0,
+                    0,
+                    window_width,
+                    window_height + extra,
+                    SWP_NOMOVE | SWP_NOZORDER,
+                );
+
+                // Recompute client rect after resizing
+                winapi::um::winuser::GetClientRect(hwnd, &mut client_rect);
+            }
+
+            // Calculate button positions using the final client width
+            let client_width = client_rect.right - client_rect.left;
             let total_button_width = BUTTON_COUNT * button_width + (BUTTON_COUNT - 1) * margin;
-            let start_x = (window_width - total_button_width) / 2;
-            let button_y = 120;
-            
+            let start_x = (client_width - total_button_width) / 2;
+            // Place buttons near the bottom with margin
+            let button_y = (client_rect.bottom - client_rect.top) - margin - button_height;
+
+            // Create a persistent font for the buttons
+            let font = create_scaled_font(12);
+
             // Create buttons based on button count
             if BUTTON_COUNT >= 1 {
                 let btn1 = CreateWindowExW(
@@ -141,9 +202,14 @@ unsafe extern "system" fn window_proc(
                     ptr::null_mut(),
                     ptr::null_mut(),
                 );
-                winapi::um::winuser::SendMessageW(btn1, winapi::um::winuser::WM_SETFONT, font as WPARAM, 1 as LPARAM);
+                winapi::um::winuser::SendMessageW(
+                    btn1,
+                    winapi::um::winuser::WM_SETFONT,
+                    font as WPARAM,
+                    1 as LPARAM,
+                );
             }
-            
+
             if BUTTON_COUNT >= 2 {
                 let btn2 = CreateWindowExW(
                     0,
@@ -159,9 +225,14 @@ unsafe extern "system" fn window_proc(
                     ptr::null_mut(),
                     ptr::null_mut(),
                 );
-                winapi::um::winuser::SendMessageW(btn2, winapi::um::winuser::WM_SETFONT, font as WPARAM, 1 as LPARAM);
+                winapi::um::winuser::SendMessageW(
+                    btn2,
+                    winapi::um::winuser::WM_SETFONT,
+                    font as WPARAM,
+                    1 as LPARAM,
+                );
             }
-            
+
             if BUTTON_COUNT >= 3 {
                 let btn3 = CreateWindowExW(
                     0,
@@ -177,9 +248,14 @@ unsafe extern "system" fn window_proc(
                     ptr::null_mut(),
                     ptr::null_mut(),
                 );
-                winapi::um::winuser::SendMessageW(btn3, winapi::um::winuser::WM_SETFONT, font as WPARAM, 1 as LPARAM);
+                winapi::um::winuser::SendMessageW(
+                    btn3,
+                    winapi::um::winuser::WM_SETFONT,
+                    font as WPARAM,
+                    1 as LPARAM,
+                );
             }
-            
+
             0
         }
         WM_COMMAND => {
@@ -210,17 +286,25 @@ unsafe extern "system" fn window_proc(
             
             let mut rect: RECT = std::mem::zeroed();
             winapi::um::winuser::GetClientRect(hwnd, &mut rect);
+
+            let scale = get_dpi_scale();
+            let margin = (20.0 * scale) as i32;
+            let button_height = (35.0 * scale * 1.2) as i32;
+
+            rect.left += margin;
+            rect.right -= margin;
             rect.top = 30;
-            rect.bottom = 100;
-            rect.left += 20;
-            rect.right -= 20;
-            
+            rect.bottom -= margin + button_height + margin;
+            if rect.bottom < rect.top {
+                rect.bottom = rect.top + 1;
+            }
+
             DrawTextW(
                 hdc,
                 MESSAGE_TEXT.as_ptr(),
                 MESSAGE_TEXT.len() as i32 - 1,
                 &mut rect,
-                DT_CENTER | DT_VCENTER,
+                DT_CENTER | DT_WORDBREAK | DT_VCENTER,
             );
             
             SelectObject(hdc, old_font);
